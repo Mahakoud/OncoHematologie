@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>OncoHématologie – Tableau (accès privé via Google)</title>
+  <style>
+    :root{
+      --bg:#f6f7fb;--card:#fff;--ink:#0e1116;--muted:#5d6470;--primary:#2f6fed;--border:#e6e8ef
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;background:var(--bg);color:var(--ink)}
+    .container{max-width:1100px;margin:24px auto;padding:24px}
+    .card{background:var(--card);border:1px solid var(--border);border-radius:14px;box-shadow:0 10px 30px rgba(0,0,0,.06);padding:18px}
+    h1{margin:0 0 12px}
+    .toolbar{display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin:6px 0 14px}
+    input[type="search"]{flex:1;min-width:240px;padding:.65rem .8rem;border:1px solid #d9dbe7;border-radius:12px;background:#fafafe}
+    .btn{background:var(--primary);color:#fff;border:none;border-radius:12px;padding:.6rem .9rem;cursor:pointer}
+    .ghost{background:#e9ecf8;color:#1c2b6b}
+    .muted{color:var(--muted)}
+    table{width:100%;border-collapse:separate;border-spacing:0}
+    thead th{position:sticky;top:0;background:#fff;border-bottom:1px solid var(--border);text-align:left;padding:10px;font-weight:600}
+    tbody td{border-bottom:1px solid var(--border);padding:10px;vertical-align:top}
+    tr:hover td{background:#fafafe}
+    .tag{display:inline-block;padding:.18rem .5rem;border:1px solid #dfe3ef;border-radius:999px;font-size:.78rem;color:#304060;background:#f4f6ff}
+    .footer{margin-top:10px;font-size:.85rem;color:var(--muted)}
+    .hidden{display:none}
+  </style>
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+</head>
+<body>
+  <div class="container">
+    <h1>OncoHématologie — Tableau des dossiers (Privé)</h1>
+    <div class="card">
+      <div class="toolbar">
+        <input id="q" type="search" placeholder="Rechercher (Dossier, Nom, IP, Indications, ...)" />
+        <button id="btn-signin" class="btn">Se connecter avec Google</button>
+        <button id="btn-refresh" class="btn hidden">Rafraîchir</button>
+        <button id="btn-signout" class="btn ghost hidden">Se déconnecter</button>
+      </div>
+
+      <div id="status" class="muted">Connecte-toi pour charger la feuille.</div>
+
+      <div style="overflow:auto; max-height:70vh; border:1px solid var(--border); border-radius:12px; margin-top:10px;">
+        <table id="grid" aria-describedby="status">
+          <thead>
+            <tr>
+              <th data-sort="Dossier">Dossier ⬍</th>
+              <th data-sort="Date">Date ⬍</th>
+              <th data-sort="Nom et Prénom">Nom et Prénom ⬍</th>
+              <th data-sort="IP">IP ⬍</th>
+              <th data-sort="Contact">Contact ⬍</th>
+              <th data-sort="Indications">Indications ⬍</th>
+              <th data-sort="Responsable Dossier">Responsable Dossier ⬍</th>
+              <th data-sort="Responsable Test">Responsable Test ⬍</th>
+              <th data-sort="État">État ⬍</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+
+      <div class="footer">
+        Accès via OAuth Google (portée : lecture seule). Ton fichier reste privé.
+      </div>
+    </div>
+  </div>
+
+<script>
+/** ============ CONFIG ============ */
+const CLIENT_ID   = "180617663819-qn42pq9nan58qemgut45hprdf8uj0c4b.apps.googleusercontent.com"; // ← remplace par ton OAuth Client ID
+const SHEET_ID    = "1N9cATm7t1PDroKrIw7ovSHmQ27QRgjXmHUERrKkFMnY"; // ← ton ID
+const SHEET_NAME  = "OncoHematologie";                         // ← nom exact de l’onglet
+const RANGE_A1    = `${SHEET_NAME}!A1:I`; // colonnes A..I (ajuste au besoin)
+const SCOPE       = "https://www.googleapis.com/auth/spreadsheets.readonly";
+
+/** ============ ÉTAT ============ */
+const headersWanted = [
+  "Dossier","Date","Nom et Prénom","IP","Contact","Indications",
+  "Responsable Dossier","Responsable Test","État"
+];
+const state = { rows:[], filtered:[], sortKey:"Date", sortAsc:false, accessToken:null, tokenClient:null };
+
+/** ============ UI HELPERS ============ */
+const $ = sel => document.querySelector(sel);
+const $$ = sel => Array.from(document.querySelectorAll(sel));
+function setStatus(msg){ $("#status").textContent = msg; }
+function escapeHtml(s){
+  return String(s)
+    .replaceAll("&","&amp;").replaceAll("<","&lt;")
+    .replaceAll(">","&gt;").replaceAll('"',"&quot;")
+    .replaceAll("'","&#039;");
+}
+function toDateFR(v){
+  if (v == null || v === "") return "";
+  if (typeof v === "number"){
+    // Excel serial date
+    const ms = (v - 25569) * 86400 * 1000;
+    const d = new Date(ms);
+    return `${String(d.getUTCDate()).padStart(2,"0")}/${String(d.getUTCMonth()+1).padStart(2,"0")}/${d.getUTCFullYear()}`;
+  }
+  // formats JJ/MM/AAAA etc.
+  const m = String(v).match(/^(\d{1,2})[\/\.\-](\d{1,2})[\/\.\-](\d{2,4})$/);
+  if (m){
+    const [ , dd, mm, yy ] = m;
+    const yyyy = yy.length===2 ? ("20"+yy) : yy;
+    return `${dd.padStart(2,"0")}/${mm.padStart(2,"0")}/${yyyy}`;
+  }
+  return String(v);
+}
+function parseFrDate(s){
+  const m = String(s).match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if(!m) return null;
+  const [ , dd, mm, yyyy ] = m;
+  return new Date(`${yyyy}-${mm}-${dd}T00:00:00Z`).getTime();
+}
+
+/** ============ RENDU TABLEAU ============ */
+function render(){
+  const tbody = $("#grid tbody");
+  tbody.innerHTML = "";
+  for (const r of state.filtered){
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${escapeHtml(r["Dossier"]||"")}</td>
+      <td>${escapeHtml(r["Date"]||"")}</td>
+      <td>${escapeHtml(r["Nom et Prénom"]||"")}</td>
+      <td>${escapeHtml(r["IP"]||"")}</td>
+      <td>${escapeHtml(r["Contact"]||"")}</td>
+      <td>${escapeHtml(r["Indications"]||"")}</td>
+      <td>${escapeHtml(r["Responsable Dossier"]||"")}</td>
+      <td>${escapeHtml(r["Responsable Test"]||"")}</td>
+      <td><span class="tag">${escapeHtml(r["État"]||"")}</span></td>
+    `;
+    tbody.appendChild(tr);
+  }
+  setStatus(`${state.filtered.length} ligne(s) affichée(s)`);
+}
+function sortBy(key){
+  if (state.sortKey === key) state.sortAsc = !state.sortAsc;
+  else { state.sortKey = key; state.sortAsc = true; }
+  const asc = state.sortAsc;
+  state.filtered.sort((a,b)=>{
+    let va = a[key] ?? "", vb = b[key] ?? "";
+    if (key==="Date"){
+      const ta=parseFrDate(va), tb=parseFrDate(vb);
+      if (ta!=null && tb!=null) return asc ? (ta - tb) : (tb - ta);
+    }
+    va = String(va).toLowerCase(); vb = String(vb).toLowerCase();
+    if (va<vb) return asc?-1:1;
+    if (va>vb) return asc?1:-1;
+    return 0;
+  });
+  render();
+}
+function applyFilter(q){
+  const needle = q.trim().toLowerCase();
+  if (!needle) state.filtered = [...state.rows];
+  else {
+    state.filtered = state.rows.filter(r =>
+      Object.values(r).some(v => String(v||"").toLowerCase().includes(needle))
+    );
+  }
+  // garder le tri courant
+  const k = state.sortKey; const asc = state.sortAsc;
+  state.sortKey = null; state.sortAsc = asc;
+  sortBy(k);
+}
+
+/** ============ AUTH + API CALL ============ */
+window.onload = () => {
+  // Prépare le client GIS pour demander un token Sheets en pop-up
+  state.tokenClient = google.accounts.oauth2.initTokenClient({
+    client_id: CLIENT_ID,
+    scope: SCOPE,
+    prompt: "", // re-utilise consentement si déjà accordé
+    callback: (resp) => {
+      if (resp.error){ setStatus("Erreur OAuth."); console.error(resp); return; }
+      state.accessToken = resp.access_token;
+      $("#btn-refresh").classList.remove("hidden");
+      $("#btn-signout").classList.remove("hidden");
+      loadSheetValues();
+    }
+  });
+};
+
+async function loadSheetValues(){
+  if (!state.accessToken){ setStatus("Non connecté."); return; }
+  setStatus("Chargement…");
+  try{
+    const url = `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/${encodeURIComponent(RANGE_A1)}?valueRenderOption=UNFORMATTED_VALUE&dateTimeRenderOption=SERIAL_NUMBER`;
+    const res = await fetch(url, { headers: { "Authorization": `Bearer ${state.accessToken}` }});
+    if (!res.ok){
+      if (res.status===401){ // token expiré → redemander
+        return requestToken(true);
+      }
+      throw new Error(`HTTP ${res.status}`);
+    }
+    const data = await res.json();
+    const values = data.values || [];
+    if (values.length===0){ state.rows=[]; state.filtered=[]; render(); return; }
+
+    const header = (values[0]||[]).map(h => String(h||"").trim());
+    // index des colonnes demandées
+    const idx = headersWanted.map(h => header.indexOf(h));
+    // lignes
+    const rows = values.slice(1).map(line=>{
+      const obj = {};
+      headersWanted.forEach((h,i)=>{
+        const k = idx[i];
+        const val = (k>=0 && k<line.length) ? line[k] : "";
+        obj[h] = (h==="Date") ? toDateFR(val) : (val ?? "");
+      });
+      return obj;
+    }).filter(r => r["Dossier"]!=="Dossier"); // au cas où une ligne d’entêtes se répète
+    state.rows = rows;
+    state.filtered = [...rows];
+    // tri par défaut : Date décroissante
+    state.sortKey = "Date"; state.sortAsc = false;
+    sortBy("Date");
+    setStatus(`${rows.length} ligne(s) chargée(s)`);
+  } catch(err){
+    console.error(err);
+    setStatus("Erreur de lecture (droits d’accès, ID, ou nom de feuille).");
+  }
+}
+
+function requestToken(force=false){
+  state.tokenClient.requestAccessToken({ prompt: force ? "consent" : "" });
+}
+
+function revokeToken(){
+  if (!state.accessToken) return;
+  google.accounts.oauth2.revoke(state.accessToken, () => {
+    state.accessToken = null;
+    $("#btn-refresh").classList.add("hidden");
+    $("#btn-signout").classList.add("hidden");
+    setStatus("Déconnecté. Connecte-toi pour recharger.");
+    $("#grid tbody").innerHTML = "";
+  });
+}
+
+/** ============ EVENTS ============ */
+$("#btn-signin").addEventListener("click", ()=> requestToken());
+$("#btn-refresh").addEventListener("click", ()=> loadSheetValues());
+$("#btn-signout").addEventListener("click", ()=> revokeToken());
+$("#q").addEventListener("input", e => applyFilter(e.target.value));
+$$("th[data-sort]").forEach(th=>{
+  th.style.cursor="pointer";
+  th.addEventListener("click", ()=> sortBy(th.dataset.sort));
+});
+</script>
+</body>
+</html>
