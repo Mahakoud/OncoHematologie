@@ -26,12 +26,34 @@
     .tag{display:inline-block;padding:.18rem .5rem;border:1px solid #dfe3ef;border-radius:999px;font-size:.78rem;color:#304060;background:#f4f6ff}
     .footer{margin-top:10px;font-size:.85rem;color:var(--muted)}
     .hidden{display:none}
+    .notice{
+      border:1px solid #f0dede;
+      background:#fff7f7;
+      border-radius:12px;
+      padding:10px 12px;
+      margin:8px 0 12px;
+    }
+    .notice .row{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+    .pill{
+      display:inline-block;
+      min-width:1.8rem; text-align:center;
+      padding:.12rem .5rem; border-radius:999px; font-weight:700;
+      border:1px solid rgba(0,0,0,.08);
+    }
+    .pill.red{background:#ffe5e5}
+    .pill.yellow{background:#fff4cc}
+    .hidden{display:none}
+
   </style>
   <script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 <body>
   <div class="container">
     <h1>OncoHématologie — Tableau des dossiers (Privé)</h1>
+    <div id="alerts" class="notice hidden">
+      <!-- rempli par JS -->
+    </div>
+
     <div class="card">
       <div class="toolbar">
         <input id="q" type="search" placeholder="Rechercher (Dossier, Nom, IP, Indications, ...)" />
@@ -184,6 +206,46 @@ window.onload = () => {
     }
   });
 };
+function daysDiffFromToday(frDateStr){
+  const t = parseFrDate(frDateStr);     // parseFrDate("JJ/MM/AAAA") -> ms (UTC)
+  if (t==null) return null;
+  const now = new Date();
+  const todayUTC = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+  const dUTC = new Date(t);
+  const dayUTC = Date.UTC(dUTC.getUTCFullYear(), dUTC.getUTCMonth(), dUTC.getUTCDate());
+  return Math.floor((todayUTC - dayUTC) / 86400000); // jours écoulés
+}
+
+function buildAndRenderAlerts(rows){
+  const red = [];    // >15 jours
+  const yellow = []; // 7–15 jours
+  for (const r of rows){
+    const d = r["Date"];
+    const dossier = r["Dossier"];
+    const dd = daysDiffFromToday(d);
+    if (dd==null || isNaN(dd)) continue;
+    if (dd > 15) red.push(dossier);
+    else if (dd >= 7 && dd <= 15) yellow.push(dossier);
+  }
+  const box = document.getElementById("alerts");
+  if (!box) return;
+  if (red.length===0 && yellow.length===0){
+    box.classList.add("hidden");
+    box.innerHTML = "";
+    return;
+  }
+  box.classList.remove("hidden");
+  box.innerHTML = `
+    <div class="row">
+      <span class="pill red">${red.length}</span>
+      <span><strong>Rouge</strong> : Dossiers &gt; 15 jours → ${red.length ? red.join(", ") : "aucun"}</span>
+    </div>
+    <div class="row" style="margin-top:6px">
+      <span class="pill yellow">${yellow.length}</span>
+      <span><strong>Jaune</strong> : Dossiers 7–15 jours → ${yellow.length ? yellow.join(", ") : "aucun"}</span>
+    </div>
+  `;
+}
 
 async function loadSheetValues(){
   if (!state.accessToken){ setStatus("Non connecté."); return; }
@@ -253,6 +315,18 @@ async function loadSheetValues(){
     }
 
     state.rows = rows;
+        // ... après le for qui remplit `rows`
+    state.rows = rows;
+    state.filtered = [...rows];
+    
+    // 👉 construit et affiche les alertes avant de rendre le tableau
+    buildAndRenderAlerts(state.rows);
+    
+    // tri par défaut puis rendu
+    state.sortKey = "Date"; state.sortAsc = false;
+    sortBy("Date");
+    setStatus(`${rows.length} ligne(s) chargée(s)`);
+
     state.filtered = [...rows];
     state.sortKey = "Date"; state.sortAsc = false;
     sortBy("Date");
