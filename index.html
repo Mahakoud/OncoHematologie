@@ -225,9 +225,14 @@ function daysDiffFromToday(frDateStr){
 function buildAndRenderAlerts(rows){
   const red = [];    // > 15 jours
   const yellow = []; // 7–15 jours (inclus)
+
   for (const r of rows){
+    const etat = String(r["État"] || r["Etat"] || "").toLowerCase().trim();
+    if (etat !== "en cours") continue; // 🔴 ignore les autres états
+
     const dd = daysDiffFromToday(r["Date"]);
-    if (dd==null || isNaN(dd)) continue;
+    if (dd == null || isNaN(dd)) continue;
+
     if (dd > 15) red.push(r["Dossier"]);
     else if (dd >= 7 && dd <= 15) yellow.push(r["Dossier"]);
   }
@@ -249,21 +254,21 @@ function buildAndRenderAlerts(rows){
   box.innerHTML = `
     <div class="row">
       <span class="pill red">${red.length}</span>
-      <strong>Rouge</strong> : &gt; 15 jours
+      <strong>Rouge</strong> : &gt; 15 jours (en cours)
     </div>
     <div class="chips" id="chips-red">
       ${red.length ? makeChips(red, "red") : '<em>Aucun</em>'}
     </div>
     <div class="row" style="margin-top:4px">
       <span class="pill yellow">${yellow.length}</span>
-      <strong>Jaune</strong> : 7–15 jours
+      <strong>Jaune</strong> : 7–15 jours (en cours)
     </div>
     <div class="chips" id="chips-yellow">
       ${yellow.length ? makeChips(yellow, "yellow") : '<em>Aucun</em>'}
     </div>
   `;
 
-  // Cliquer sur un chip remplit le champ de recherche et filtre le tableau
+  // clic sur un chip → filtre le tableau
   box.querySelectorAll(".chip").forEach(el=>{
     el.addEventListener("click", ()=>{
       const v = el.getAttribute("data-chip") || "";
@@ -272,11 +277,11 @@ function buildAndRenderAlerts(rows){
         input.value = v;
         applyFilter(v);
       }
-      // scroll jusqu'au tableau si besoin
       document.getElementById("grid")?.scrollIntoView({behavior:"smooth", block:"start"});
     });
   });
 }
+
 
 
 async function loadSheetValues(){
