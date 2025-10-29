@@ -192,47 +192,68 @@ async function loadSheetValues(){
     const url = `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/${encodeURIComponent(RANGE_A1)}?valueRenderOption=UNFORMATTED_VALUE&dateTimeRenderOption=SERIAL_NUMBER`;
     const res = await fetch(url, { headers: { "Authorization": `Bearer ${state.accessToken}` }});
     if (!res.ok){
-      if (res.status===401){ // token expiré → redemander
-        return requestToken(true);
-      }
+      if (res.status===401){ return requestToken(true); }
       throw new Error(`HTTP ${res.status}`);
     }
     const data = await res.json();
     const values = data.values || [];
     if (values.length===0){ state.rows=[]; state.filtered=[]; render(); return; }
 
-    const header = (values[0]||[]).map(h => String(h||"").trim());
+    // --- helpers robustes ---
+    const stripInvisibles = s => String(s ?? "")
+      .replace(/\u00A0/g, " ")         // NBSP
+      .replace(/[\u200B-\u200D\uFEFF]/g, ""); // zero-width
+    const isBlank = v => stripInvisibles(v).trim() === "";
 
-    // index des colonnes demandées (pour mappage)
+    const normalize = s => stripInvisibles(String(s||""))
+      .normalize("NFD").replace(/[\u0300-\u036f]/g,"") // sans accents
+      .toLowerCase().replace(/\s+/g," ").trim();
+
+    const header = (values[0]||[]).map(h => String(h||"").trim());
+    const headerNorm = header.map(normalize);
+
+    // Cherche la colonne "Nom et Prénom" avec tolérance (accents/variantes)
+    const nameAliases = [
+      "nom et prénom","nom et prenom","nom prénom","nom prenom","nom"
+    ];
+    let nameIdx = -1;
+    for (const alias of nameAliases){
+      const i = headerNorm.indexOf(alias);
+      if (i !== -1){ nameIdx = i; break; }
+    }
+    if (nameIdx === -1){
+      // fallback: tente l'index connu depuis headersWanted
+      const wantedIndex = headersWanted.indexOf("Nom et Prénom");
+      if (wantedIndex !== -1){
+        const k = header.indexOf(headersWanted[wantedIndex]);
+        if (k !== -1) nameIdx = k;
+      }
+    }
+
+    // index mappage pour construire l'objet ligne
     const idx = headersWanted.map(h => header.indexOf(h));
 
-    // index de la colonne "Nom et Prénom" pour la condition d'arrêt
-    const nameIdx = header.indexOf("Nom et Prénom");
-
-    // --- Construit les lignes à partir de la 2e ligne et s'arrête à la 1re ligne avec Nom vide ---
     const rows = [];
-    for (let i = 1; i < values.length; i++) {
+    for (let i = 1; i < values.length; i++) { // démarre ligne 2
       const line = values[i] || [];
 
-      // condition d'arrêt : "Nom et Prénom" vide → on stoppe la boucle
+      // Si le nom est vide → STOP (ne pas afficher les lignes suivantes)
       const rawName = (nameIdx >= 0 && nameIdx < line.length) ? line[nameIdx] : "";
-      if (rawName == null || String(rawName).trim() === "") break;
+      if (isBlank(rawName)) break;
 
       const obj = {};
       headersWanted.forEach((h, j) => {
         const k = idx[j];
         const val = (k >= 0 && k < line.length) ? line[k] : "";
-        obj[h] = (h === "Date") ? toDateFR(val) : (val ?? "");
+        obj[h] = (h === "Date") ? toDateFR(val) : stripInvisibles(val);
       });
 
       // évite une éventuelle répétition d'en-têtes
-      if (obj["Dossier"] !== "Dossier") rows.push(obj);
+      if (normalize(obj["Dossier"]) !== "dossier") rows.push(obj);
     }
-    // --------------------------------------------------------------------
 
     state.rows = rows;
     state.filtered = [...rows];
-    // tri par défaut : Date décroissante
     state.sortKey = "Date"; state.sortAsc = false;
     sortBy("Date");
     setStatus(`${rows.length} ligne(s) chargée(s)`);
@@ -241,6 +262,7 @@ async function loadSheetValues(){
     setStatus("Erreur de lecture (droits d’accès, ID, ou nom de feuille).");
   }
 }
+
 
 function requestToken(force=false){
   state.tokenClient.requestAccessToken({ prompt: force ? "consent" : "" });
