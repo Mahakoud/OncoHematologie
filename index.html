@@ -225,10 +225,15 @@ function daysDiffFromToday(frDateStr){
 function buildAndRenderAlerts(rows){
   const red = [];    // > 15 jours
   const yellow = []; // 7–15 jours (inclus)
+  const limite = new Date("2025-09-01T00:00:00Z").getTime(); // 🔸 Seuil de date minimale
 
   for (const r of rows){
     const etat = String(r["État"] || r["Etat"] || "").toLowerCase().trim();
     if (etat !== "en cours") continue; // 🔴 ignore les autres états
+
+    const t = parseFrDate(r["Date"]);
+    if (t == null || isNaN(t)) continue;
+    if (t < limite) continue; // ⚠️ ignore les dossiers avant 01/09/2025
 
     const dd = daysDiffFromToday(r["Date"]);
     if (dd == null || isNaN(dd)) continue;
@@ -254,14 +259,14 @@ function buildAndRenderAlerts(rows){
   box.innerHTML = `
     <div class="row">
       <span class="pill red">${red.length}</span>
-      <strong>Rouge</strong> : &gt; 15 jours (en cours)
+      <strong>Rouge</strong> : &gt; 15 jours (en cours, depuis 01/09/2025)
     </div>
     <div class="chips" id="chips-red">
       ${red.length ? makeChips(red, "red") : '<em>Aucun</em>'}
     </div>
     <div class="row" style="margin-top:4px">
       <span class="pill yellow">${yellow.length}</span>
-      <strong>Jaune</strong> : 7–15 jours (en cours)
+      <strong>Jaune</strong> : 7–15 jours (en cours, depuis 01/09/2025)
     </div>
     <div class="chips" id="chips-yellow">
       ${yellow.length ? makeChips(yellow, "yellow") : '<em>Aucun</em>'}
