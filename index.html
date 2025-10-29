@@ -259,14 +259,14 @@ function buildAndRenderAlerts(rows){
   box.innerHTML = `
     <div class="row">
       <span class="pill red">${red.length}</span>
-      <strong>Rouge</strong> : &gt; 15 jours (en cours, depuis 01/09/2025)
+      <strong>Rouge</strong> : &gt; 15 jours
     </div>
     <div class="chips" id="chips-red">
       ${red.length ? makeChips(red, "red") : '<em>Aucun</em>'}
     </div>
     <div class="row" style="margin-top:4px">
       <span class="pill yellow">${yellow.length}</span>
-      <strong>Jaune</strong> : 7–15 jours (en cours, depuis 01/09/2025)
+      <strong>Jaune</strong> : 7–15 jours
     </div>
     <div class="chips" id="chips-yellow">
       ${yellow.length ? makeChips(yellow, "yellow") : '<em>Aucun</em>'}
