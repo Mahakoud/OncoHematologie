@@ -27,22 +27,28 @@
     .footer{margin-top:10px;font-size:.85rem;color:var(--muted)}
     .hidden{display:none}
     .notice{
-      border:1px solid #f0dede;
-      background:#fff7f7;
-      border-radius:12px;
-      padding:10px 12px;
-      margin:8px 0 12px;
+      border:1px solid #f0dede;background:#fff7f7;border-radius:12px;
+      padding:10px 12px;margin:8px 0 12px
     }
-    .notice .row{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+    .notice .row{display:flex;gap:10px;align-items:center;margin:6px 0}
+    .notice .chips{display:flex;flex-wrap:wrap;gap:8px}
     .pill{
-      display:inline-block;
-      min-width:1.8rem; text-align:center;
-      padding:.12rem .5rem; border-radius:999px; font-weight:700;
-      border:1px solid rgba(0,0,0,.08);
+      display:inline-block;min-width:1.8rem;text-align:center;
+      padding:.12rem .5rem;border-radius:999px;font-weight:700;
+      border:1px solid rgba(0,0,0,.08)
     }
     .pill.red{background:#ffe5e5}
     .pill.yellow{background:#fff4cc}
+    .chip{
+      display:inline-block;padding:.35rem .6rem;border-radius:10px;
+      font-weight:600;border:1px solid transparent;cursor:pointer;
+      user-select:none;box-shadow:0 1px 0 rgba(0,0,0,.05)
+    }
+    .chip.red{background:#ffebeb;border-color:#f2c7c7}
+    .chip.yellow{background:#fff7d6;border-color:#f0e0a6}
+    .chip:hover{filter:brightness(0.97)}
     .hidden{display:none}
+
 
   </style>
   <script src="https://accounts.google.com/gsi/client" async defer></script>
@@ -207,45 +213,71 @@ window.onload = () => {
   });
 };
 function daysDiffFromToday(frDateStr){
-  const t = parseFrDate(frDateStr);     // parseFrDate("JJ/MM/AAAA") -> ms (UTC)
+  const t = parseFrDate(frDateStr);
   if (t==null) return null;
   const now = new Date();
   const todayUTC = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
-  const dUTC = new Date(t);
-  const dayUTC = Date.UTC(dUTC.getUTCFullYear(), dUTC.getUTCMonth(), dUTC.getUTCDate());
-  return Math.floor((todayUTC - dayUTC) / 86400000); // jours écoulés
+  const d = new Date(t);
+  const dayUTC = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+  return Math.floor((todayUTC - dayUTC) / 86400000);
 }
 
 function buildAndRenderAlerts(rows){
-  const red = [];    // >15 jours
-  const yellow = []; // 7–15 jours
+  const red = [];    // > 15 jours
+  const yellow = []; // 7–15 jours (inclus)
   for (const r of rows){
-    const d = r["Date"];
-    const dossier = r["Dossier"];
-    const dd = daysDiffFromToday(d);
+    const dd = daysDiffFromToday(r["Date"]);
     if (dd==null || isNaN(dd)) continue;
-    if (dd > 15) red.push(dossier);
-    else if (dd >= 7 && dd <= 15) yellow.push(dossier);
+    if (dd > 15) red.push(r["Dossier"]);
+    else if (dd >= 7 && dd <= 15) yellow.push(r["Dossier"]);
   }
+
   const box = document.getElementById("alerts");
   if (!box) return;
-  if (red.length===0 && yellow.length===0){
+
+  if (!red.length && !yellow.length){
     box.classList.add("hidden");
     box.innerHTML = "";
     return;
   }
+
+  const makeChips = (arr, color) => arr.map(d =>
+    `<span class="chip ${color}" data-chip="${String(d).replace(/"/g,'&quot;')}">${String(d)}</span>`
+  ).join("");
+
   box.classList.remove("hidden");
   box.innerHTML = `
     <div class="row">
       <span class="pill red">${red.length}</span>
-      <span><strong>Rouge</strong> : Dossiers &gt; 15 jours → ${red.length ? red.join(", ") : "aucun"}</span>
+      <strong>Rouge</strong> : &gt; 15 jours
     </div>
-    <div class="row" style="margin-top:6px">
+    <div class="chips" id="chips-red">
+      ${red.length ? makeChips(red, "red") : '<em>Aucun</em>'}
+    </div>
+    <div class="row" style="margin-top:4px">
       <span class="pill yellow">${yellow.length}</span>
-      <span><strong>Jaune</strong> : Dossiers 7–15 jours → ${yellow.length ? yellow.join(", ") : "aucun"}</span>
+      <strong>Jaune</strong> : 7–15 jours
+    </div>
+    <div class="chips" id="chips-yellow">
+      ${yellow.length ? makeChips(yellow, "yellow") : '<em>Aucun</em>'}
     </div>
   `;
+
+  // Cliquer sur un chip remplit le champ de recherche et filtre le tableau
+  box.querySelectorAll(".chip").forEach(el=>{
+    el.addEventListener("click", ()=>{
+      const v = el.getAttribute("data-chip") || "";
+      const input = document.getElementById("q");
+      if (input){
+        input.value = v;
+        applyFilter(v);
+      }
+      // scroll jusqu'au tableau si besoin
+      document.getElementById("grid")?.scrollIntoView({behavior:"smooth", block:"start"});
+    });
+  });
 }
+
 
 async function loadSheetValues(){
   if (!state.accessToken){ setStatus("Non connecté."); return; }
