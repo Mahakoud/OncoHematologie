@@ -202,18 +202,34 @@ async function loadSheetValues(){
     if (values.length===0){ state.rows=[]; state.filtered=[]; render(); return; }
 
     const header = (values[0]||[]).map(h => String(h||"").trim());
-    // index des colonnes demandées
+
+    // index des colonnes demandées (pour mappage)
     const idx = headersWanted.map(h => header.indexOf(h));
-    // lignes
-    const rows = values.slice(1).map(line=>{
+
+    // index de la colonne "Nom et Prénom" pour la condition d'arrêt
+    const nameIdx = header.indexOf("Nom et Prénom");
+
+    // --- Construit les lignes à partir de la 2e ligne et s'arrête à la 1re ligne avec Nom vide ---
+    const rows = [];
+    for (let i = 1; i < values.length; i++) {
+      const line = values[i] || [];
+
+      // condition d'arrêt : "Nom et Prénom" vide → on stoppe la boucle
+      const rawName = (nameIdx >= 0 && nameIdx < line.length) ? line[nameIdx] : "";
+      if (rawName == null || String(rawName).trim() === "") break;
+
       const obj = {};
-      headersWanted.forEach((h,i)=>{
-        const k = idx[i];
-        const val = (k>=0 && k<line.length) ? line[k] : "";
-        obj[h] = (h==="Date") ? toDateFR(val) : (val ?? "");
+      headersWanted.forEach((h, j) => {
+        const k = idx[j];
+        const val = (k >= 0 && k < line.length) ? line[k] : "";
+        obj[h] = (h === "Date") ? toDateFR(val) : (val ?? "");
       });
-      return obj;
-    }).filter(r => r["Dossier"]!=="Dossier"); // au cas où une ligne d’entêtes se répète
+
+      // évite une éventuelle répétition d'en-têtes
+      if (obj["Dossier"] !== "Dossier") rows.push(obj);
+    }
+    // --------------------------------------------------------------------
+
     state.rows = rows;
     state.filtered = [...rows];
     // tri par défaut : Date décroissante
