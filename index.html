@@ -39,6 +39,7 @@
     }
     .pill.red{background:#ffe5e5}
     .pill.yellow{background:#fff4cc}
+    .pill.green{background:#c9f2c9;}
     .chip{
       display:inline-block;padding:.35rem .6rem;border-radius:10px;
       font-weight:600;border:1px solid transparent;cursor:pointer;
@@ -46,6 +47,7 @@
     }
     .chip.red{background:#ff0000;border-color:#f2c7c7}
     .chip.yellow{background:#fff200;border-color:#f0e0a6}
+    .chip.green{background:#e6f8e6;border-color:#bde5bd;}
     .chip:hover{filter:brightness(0.97)}
     .hidden{display:none}
 
@@ -223,29 +225,31 @@ function daysDiffFromToday(frDateStr){
 }
 
 function buildAndRenderAlerts(rows){
-  const red = [];    // > 15 jours
-  const yellow = []; // 7–15 jours (inclus)
-  const limite = new Date("2025-09-01T00:00:00Z").getTime(); // 🔸 Seuil de date minimale
+  const red = [];    // >15 jours
+  const yellow = []; // 7–15 jours
+  const green = [];  // <7 jours
+  const limite = new Date("2025-09-01T00:00:00Z").getTime(); // 🔸 seuil minimal
 
   for (const r of rows){
     const etat = String(r["État"] || r["Etat"] || "").toLowerCase().trim();
-    if (etat !== "en cours") continue; // 🔴 ignore les autres états
+    if (etat !== "en cours") continue; // 🔴 ignorer si pas "en cours"
 
     const t = parseFrDate(r["Date"]);
     if (t == null || isNaN(t)) continue;
-    if (t < limite) continue; // ⚠️ ignore les dossiers avant 01/09/2025
+    if (t < limite) continue; // ⚠️ ignorer avant 01/09/2025
 
     const dd = daysDiffFromToday(r["Date"]);
     if (dd == null || isNaN(dd)) continue;
 
     if (dd > 15) red.push(r["Dossier"]);
     else if (dd >= 7 && dd <= 15) yellow.push(r["Dossier"]);
+    else if (dd < 7 && dd >= 0) green.push(r["Dossier"]);
   }
 
   const box = document.getElementById("alerts");
   if (!box) return;
 
-  if (!red.length && !yellow.length){
+  if (!red.length && !yellow.length && !green.length){
     box.classList.add("hidden");
     box.innerHTML = "";
     return;
@@ -259,17 +263,26 @@ function buildAndRenderAlerts(rows){
   box.innerHTML = `
     <div class="row">
       <span class="pill red">${red.length}</span>
-      <strong>Rouge</strong> : &gt; 15 jours
+      <strong>Rouge</strong> : &gt;15 jours
     </div>
     <div class="chips" id="chips-red">
       ${red.length ? makeChips(red, "red") : '<em>Aucun</em>'}
     </div>
+
     <div class="row" style="margin-top:4px">
       <span class="pill yellow">${yellow.length}</span>
       <strong>Jaune</strong> : 7–15 jours
     </div>
     <div class="chips" id="chips-yellow">
       ${yellow.length ? makeChips(yellow, "yellow") : '<em>Aucun</em>'}
+    </div>
+
+    <div class="row" style="margin-top:4px">
+      <span class="pill green">${green.length}</span>
+      <strong>Vert</strong> : &lt;7 jours
+    </div>
+    <div class="chips" id="chips-green">
+      ${green.length ? makeChips(green, "green") : '<em>Aucun</em>'}
     </div>
   `;
 
@@ -286,7 +299,6 @@ function buildAndRenderAlerts(rows){
     });
   });
 }
-
 
 
 async function loadSheetValues(){
